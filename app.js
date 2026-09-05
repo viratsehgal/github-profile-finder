@@ -1,6 +1,17 @@
-/* GitHub Profile Finder — no dependencies, no build step. */
+/* GitHub Profile Finder — the browser half. */
 
-const API = "https://api.github.com";
+import { languageColor } from "./lib/languages.js";
+
+/*
+ * Where GitHub requests go.
+ *
+ * Served by server.js we proxy through it, so an optional GITHUB_TOKEN can lift
+ * the rate limit without ever reaching the browser. Served as plain static
+ * files (serve.py, or any static host) we talk to GitHub directly and the
+ * video feature simply isn't offered.
+ */
+let API = "https://api.github.com";
+let backend = null;
 const RECENT_KEY = "gpf:recent";
 const THEME_KEY = "gpf:theme";
 const SORT_KEY = "gpf:sort";
@@ -30,6 +41,17 @@ const el = {
   homeLink: $("home-link"),
   themeToggle: $("theme-toggle"),
   rate: $("rate"),
+  videoBlock: $("video-block"),
+  makeVideo: $("make-video"),
+  videoProgress: $("video-progress"),
+  videoBar: $("video-bar"),
+  videoStage: $("video-stage"),
+  videoResult: $("video-result"),
+  videoPlayer: $("video-player"),
+  videoDownload: $("video-download"),
+  videoShare: $("video-share"),
+  videoCopy: $("video-copy"),
+  videoHint: $("video-hint"),
 };
 
 let currentRepos = [];
@@ -64,17 +86,6 @@ function relative(iso) {
     .format(-value, units[i][0]);
 }
 
-/* A trimmed palette; anything unlisted falls back to a neutral dot. */
-const LANG_COLORS = {
-  JavaScript: "#f1e05a", TypeScript: "#3178c6", Python: "#3572A5", Java: "#b07219",
-  C: "#555555", "C++": "#f34b7d", "C#": "#178600", Go: "#00ADD8", Rust: "#dea584",
-  Ruby: "#701516", PHP: "#4F5D95", Swift: "#F05138", Kotlin: "#A97BFF",
-  Dart: "#00B4AB", Shell: "#89e051", HTML: "#e34c26", CSS: "#563d7c",
-  Vue: "#41b883", Svelte: "#ff3e00", Elixir: "#6e4a7e", Haskell: "#5e5086",
-  Lua: "#000080", Perl: "#0298c3", Scala: "#c22d40", "Jupyter Notebook": "#DA5B0B",
-  Zig: "#ec915c", Nix: "#7e7eff", Assembly: "#6E4C13", Objective_C: "#438eff",
-};
-
 function icon(path) {
   return `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${path}"/></svg>`;
 }
@@ -96,6 +107,8 @@ function show(name) {
   el.error.hidden = name !== "error";
   el.profile.hidden = name !== "profile";
   el.reposBlock.hidden = name !== "profile";
+  // The video panel only exists when the Node backend is there to render one.
+  el.videoBlock.hidden = name !== "profile" || !backend;
   el.results.setAttribute("aria-busy", String(name === "loading"));
   el.searchBtn.disabled = name === "loading";
   el.searchBtn.textContent = name === "loading" ? "Searching…" : "Search";
@@ -160,6 +173,7 @@ async function search(rawName, { pushHash = true } = {}) {
   }
 
   if (inFlight) inFlight.abort();
+  resetVideo();
   const ctrl = new AbortController();
   inFlight = ctrl;
 
@@ -274,7 +288,7 @@ function renderRepos(failed, totalFetched) {
   const sorted = sortRepos(currentRepos, el.repoSort.value).slice(0, 12);
   el.repos.innerHTML = sorted
     .map((r) => {
-      const color = LANG_COLORS[r.language] || "var(--faint)";
+      const color = languageColor(r.language);
       return `
       <div class="repo">
         <a class="repo-name" href="${esc(r.html_url)}" target="_blank" rel="noopener noreferrer">${esc(r.name)}</a>
@@ -337,6 +351,147 @@ function applyTheme(theme) {
   try { localStorage.setItem(THEME_KEY, theme); } catch {}
 }
 
+/* ---------- video studio ---------- */
+
+const STAGE_TEXT = {
+  queued: "Warming up the projector\u2026",
+  bundling: "Packing the studio\u2026 the first render takes a little longer",
+  preparing: "Setting the stage\u2026",
+  rendering: "\ud83c\udfac Rolling camera",
+  done: "Done!",
+};
+
+let videoPoll = null;
+let currentVideo = null;
+
+/** Ask the server whether it can render (and route GitHub calls through it). */
+async function detectBackend() {
+  try {
+    const res = await fetch("/api/config", { cache: "no-store" });
+    if (!res.ok) return null;
+    const cfg = await res.json();
+    API = "/api/gh";
+    return cfg;
+  } catch {
+    return null; // static hosting: finder works, video doesn't
+  }
+}
+
+function resetVideo() {
+  clearInterval(videoPoll);
+  videoPoll = null;
+  currentVideo = null;
+  el.videoProgress.hidden = true;
+  el.videoResult.hidden = true;
+  el.videoHint.textContent = "";
+  el.videoBar.style.width = "0%";
+  el.makeVideo.disabled = false;
+  el.makeVideo.textContent = "\ud83c\udfac Make my video";
+  el.videoPlayer.removeAttribute("src");
+  el.videoPlayer.load();
+}
+
+function setStage(stage, progress = 0) {
+  const pct = Math.round((progress || 0) * 100);
+  el.videoBar.style.width = `${stage === "rendering" ? Math.max(pct, 2) : 4}%`;
+  el.videoStage.textContent =
+    stage === "rendering" ? `${STAGE_TEXT.rendering} ${pct}%` : STAGE_TEXT[stage] ?? "Working\u2026";
+}
+
+function failVideo(message) {
+  clearInterval(videoPoll);
+  videoPoll = null;
+  el.videoProgress.hidden = true;
+  el.makeVideo.disabled = false;
+  el.videoHint.textContent = `Could not make the video: ${message}`;
+}
+
+function showVideo(url, username) {
+  currentVideo = { url, username };
+  el.videoProgress.hidden = true;
+  el.videoResult.hidden = false;
+  el.makeVideo.disabled = false;
+  el.makeVideo.textContent = "\ud83c\udfac Make it again";
+  el.videoPlayer.src = url;
+  el.videoDownload.href = url;
+  el.videoDownload.download = `${username}-github.mp4`;
+  // File sharing only exists on some platforms; hide the button where it doesn't.
+  el.videoShare.hidden = typeof navigator.canShare !== "function";
+  el.videoHint.textContent = "";
+}
+
+async function makeVideo(username) {
+  resetVideo();
+  el.makeVideo.disabled = true;
+  el.videoProgress.hidden = false;
+  setStage("queued", 0);
+
+  let jobId;
+  try {
+    const res = await fetch("/api/video", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message ?? "the server refused the job");
+    jobId = data.jobId;
+  } catch (err) {
+    failVideo(err.message ?? "could not reach the render server");
+    return;
+  }
+
+  videoPoll = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/video/${jobId}`, { cache: "no-store" });
+      const job = await res.json();
+      if (job.status === "error") return failVideo(job.error ?? "the render failed");
+      setStage(job.stage, job.progress);
+      if (job.status === "done") {
+        clearInterval(videoPoll);
+        videoPoll = null;
+        showVideo(job.url, job.username);
+      }
+    } catch {
+      failVideo("lost contact with the render server");
+    }
+  }, 700);
+}
+
+async function shareVideo() {
+  if (!currentVideo) return;
+  try {
+    const blob = await (await fetch(currentVideo.url)).blob();
+    const file = new File([blob], `${currentVideo.username}-github.mp4`, { type: "video/mp4" });
+    if (!navigator.canShare?.({ files: [file] })) {
+      el.videoHint.textContent = "This browser can't share files directly \u2014 use Download instead.";
+      return;
+    }
+    await navigator.share({
+      files: [file],
+      title: `@${currentVideo.username} on GitHub`,
+      text: "My GitHub profile as a 24-second video \ud83c\udfac",
+    });
+  } catch (err) {
+    if (err?.name !== "AbortError") {
+      el.videoHint.textContent = "Sharing was cancelled or unavailable \u2014 Download always works.";
+    }
+  }
+}
+
+async function copyVideoLink() {
+  if (!currentVideo) return;
+  const absolute = new URL(currentVideo.url, location.href).href;
+  try {
+    await navigator.clipboard.writeText(absolute);
+    el.videoHint.textContent = absolute.includes("localhost")
+      ? "Link copied \u2014 note it only works on this machine. Download the MP4 to share it elsewhere."
+      : "Link copied.";
+  } catch {
+    el.videoHint.textContent = absolute;
+  }
+}
+
 /* ---------- wiring ---------- */
 
 el.form.addEventListener("submit", (e) => {
@@ -350,6 +505,7 @@ el.input.addEventListener("input", () => {
 
 function resetToHome({ focus = true } = {}) {
   if (inFlight) inFlight.abort();
+  resetVideo();
   el.input.value = "";
   el.clearBtn.hidden = true;
   currentRepos = [];
@@ -381,6 +537,14 @@ el.clearRecent.addEventListener("click", () => {
   renderRecent();
 });
 
+el.makeVideo.addEventListener("click", () => {
+  const username = el.input.value.trim();
+  if (username) makeVideo(username);
+});
+
+el.videoShare.addEventListener("click", shareVideo);
+el.videoCopy.addEventListener("click", copyVideoLink);
+
 el.themeToggle.addEventListener("click", () => {
   applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
 });
@@ -401,7 +565,7 @@ document.addEventListener("keydown", (e) => {
 
 /* ---------- boot ---------- */
 
-(function init() {
+(async function init() {
   let saved = null;
   try { saved = localStorage.getItem(THEME_KEY); } catch {}
   applyTheme(saved || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
@@ -413,6 +577,8 @@ document.addEventListener("keydown", (e) => {
 
   chips(el.suggestList, SUGGESTIONS);
   renderRecent();
+
+  backend = await detectBackend();
 
   const initial = decodeURIComponent(location.hash.slice(1));
   if (initial) search(initial, { pushHash: false });

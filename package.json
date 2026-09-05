@@ -1,0 +1,22 @@
+{
+  "name": "github-profile-finder",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Search any GitHub profile and turn it into a fun, shareable video.",
+  "scripts": {
+    "start": "node server.js",
+    "audio": "node scripts/make-audio.mjs",
+    "studio": "remotion studio remotion/index.jsx",
+    "setup-browser": "remotion browser ensure",
+    "render:sample": "node scripts/render-sample.mjs"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.521",
+    "@remotion/cli": "4.0.521",
+    "@remotion/renderer": "4.0.521",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.521"
+  }
+}

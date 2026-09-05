@@ -79,6 +79,31 @@
 
       <article id="profile" class="profile" hidden></article>
 
+      <section id="video-block" hidden>
+        <div class="video-head">
+          <h2>Your profile, the movie 🎬</h2>
+          <p class="note">A 24-second recap with an original soundtrack, rendered from your GitHub data.</p>
+        </div>
+
+        <button id="make-video" class="primary big" type="button">🎬 Make my video</button>
+
+        <div id="video-progress" hidden>
+          <div class="bar"><div id="video-bar" class="bar-fill"></div></div>
+          <p id="video-stage" class="note"></p>
+        </div>
+
+        <div id="video-result" hidden>
+          <video id="video-player" controls playsinline preload="metadata"></video>
+          <div class="video-actions">
+            <a id="video-download" class="ghost-btn" download>&#8681; Download MP4</a>
+            <button id="video-share" class="ghost-btn" type="button" hidden>&#128228; Share&hellip;</button>
+            <button id="video-copy" class="ghost-btn" type="button">&#128279; Copy link</button>
+          </div>
+        </div>
+
+        <p id="video-hint" class="note"></p>
+      </section>
+
       <div id="repos-block" hidden>
         <div class="repos-head">
           <h2>Top repositories</h2>
@@ -102,6 +127,6 @@
     <span id="rate" class="rate"></span>
   </footer>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

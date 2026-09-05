@@ -3,10 +3,9 @@
   "configurations": [
     {
       "name": "profile-finder",
-      "runtimeExecutable": "python3",
+      "runtimeExecutable": "node",
       "runtimeArgs": [
-        "serve.py",
-        "8765"
+        "server.js"
       ],
       "port": 8765
     }
