@@ -107,8 +107,8 @@ function show(name) {
   el.error.hidden = name !== "error";
   el.profile.hidden = name !== "profile";
   el.reposBlock.hidden = name !== "profile";
-  // The video panel only exists when the Node backend is there to render one.
-  el.videoBlock.hidden = name !== "profile" || !backend;
+  el.videoBlock.hidden = name !== "profile";
+  if (name === "profile" && !backend) showNoRenderer();
   el.results.setAttribute("aria-busy", String(name === "loading"));
   el.searchBtn.disabled = name === "loading";
   el.searchBtn.textContent = name === "loading" ? "Searching…" : "Search";
@@ -377,7 +377,22 @@ async function detectBackend() {
   }
 }
 
+/**
+ * Rendering needs the Node server (server.js). On a static host there isn't one,
+ * so say that plainly rather than making the whole feature disappear.
+ */
+function showNoRenderer() {
+  el.makeVideo.hidden = true;
+  el.videoProgress.hidden = true;
+  el.videoResult.hidden = true;
+  el.videoHint.textContent =
+    "Video rendering needs the Node server \u2014 this page is running as a static site, " +
+    "so there's nothing here to render with. Run it locally with `npm start`, or deploy " +
+    "somewhere that runs a Node process. See the README for why a serverless host can't do it.";
+}
+
 function resetVideo() {
+  el.makeVideo.hidden = !backend;
   clearInterval(videoPoll);
   videoPoll = null;
   currentVideo = null;

@@ -82,6 +82,33 @@ tight it falls back to each repo's primary language and says "(estimated)".
   putting videos on the public internet needs a storage backend (S3, R2,
   or [Remotion Lambda](https://www.remotion.dev/docs/lambda)), which isn't wired up here.
 
+## Deploying
+
+The finder page is a static site and deploys anywhere — including Vercel — with
+no configuration. **Video rendering does not.**
+
+`@remotion/renderer` drives a real headless Chromium to screenshot 720 frames
+and mux them with ffmpeg. That means:
+
+| Requirement | Vercel serverless |
+|---|---|
+| 193 MB headless Chromium, downloaded at runtime | 250 MB unzipped function limit |
+| Writes frames and the MP4 to disk | Filesystem is read-only except `/tmp` |
+| ~20s of CPU per render on a fast laptop | 60s cap, much slower CPU |
+| Long-running process (`server.listen`) | Functions are per-request handlers |
+| Renders persist to be downloaded | No storage between invocations |
+
+So on Vercel you get the finder, and the video panel tells you the renderer
+isn't there. To actually render, you need one of:
+
+- **A host that runs a Node process** — Render, Railway, Fly.io, or any VM.
+  `npm start` works as-is; point a persistent disk or object store at `out/`.
+- **[Remotion Lambda](https://www.remotion.dev/docs/lambda)** — renders on AWS
+  Lambda and writes to S3. This is the supported serverless path, and it also
+  gives the videos real public URLs, which is what "Copy link" wants.
+- **Static front end + separate render backend** — keep the Vercel URL and
+  point the page at a renderer hosted elsewhere.
+
 ## Other commands
 
 ```bash
