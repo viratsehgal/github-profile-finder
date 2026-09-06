@@ -11,6 +11,8 @@ import { languageColor } from "./lib/languages.js";
  * video feature simply isn't offered.
  */
 let API = "https://api.github.com";
+/** Origin of the render backend. Empty means same-origin (local `npm start`). */
+let RENDER_BASE = "";
 let backend = null;
 const RECENT_KEY = "gpf:recent";
 const THEME_KEY = "gpf:theme";
@@ -364,16 +366,33 @@ const STAGE_TEXT = {
 let videoPoll = null;
 let currentVideo = null;
 
-/** Ask the server whether it can render (and route GitHub calls through it). */
+/**
+ * Find a render backend, if there is one.
+ *
+ * Two shapes are supported: served by server.js the backend is same-origin,
+ * and a static build (dist/) can name one running elsewhere via config.json.
+ */
 async function detectBackend() {
+  let base = "";
   try {
-    const res = await fetch("/api/config", { cache: "no-store" });
+    const res = await fetch("config.json", { cache: "no-store" });
+    if (res.ok) {
+      const { rendererUrl } = await res.json();
+      if (rendererUrl) base = String(rendererUrl).replace(/\/+$/, "");
+    }
+  } catch {
+    // server.js doesn't serve config.json — that's the same-origin case.
+  }
+
+  try {
+    const res = await fetch(`${base}/api/config`, { cache: "no-store" });
     if (!res.ok) return null;
     const cfg = await res.json();
-    API = "/api/gh";
+    API = `${base}/api/gh`;
+    RENDER_BASE = base;
     return cfg;
   } catch {
-    return null; // static hosting: finder works, video doesn't
+    return null; // no renderer reachable: finder works, video panel explains itself
   }
 }
 
@@ -443,7 +462,7 @@ async function makeVideo(username) {
 
   let jobId;
   try {
-    const res = await fetch("/api/video", {
+    const res = await fetch(`${RENDER_BASE}/api/video`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username }),
@@ -458,14 +477,14 @@ async function makeVideo(username) {
 
   videoPoll = setInterval(async () => {
     try {
-      const res = await fetch(`/api/video/${jobId}`, { cache: "no-store" });
+      const res = await fetch(`${RENDER_BASE}/api/video/${jobId}`, { cache: "no-store" });
       const job = await res.json();
       if (job.status === "error") return failVideo(job.error ?? "the render failed");
       setStage(job.stage, job.progress);
       if (job.status === "done") {
         clearInterval(videoPoll);
         videoPoll = null;
-        showVideo(job.url, job.username);
+        showVideo(`${RENDER_BASE}${job.url}`, job.username);
       }
     } catch {
       failVideo("lost contact with the render server");

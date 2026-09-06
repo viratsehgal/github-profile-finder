@@ -78,36 +78,72 @@ tight it falls back to each repo's primary language and says "(estimated)".
 - **Download MP4** — always works; the file is a normal H.264 MP4.
 - **Share…** — opens the native share sheet where the browser supports sharing
   files (Safari, iOS, Android). Hidden elsewhere.
-- **Copy link** — copies the video URL. Note this points at your local server;
-  putting videos on the public internet needs a storage backend (S3, R2,
-  or [Remotion Lambda](https://www.remotion.dev/docs/lambda)), which isn't wired up here.
+- **Copy link** — copies the video URL. It points at whatever host is rendering
+  (your machine locally, or your render backend), so it's shareable only as far
+  as that host is reachable. Truly public links need object storage — see
+  [Remotion Lambda](https://www.remotion.dev/docs/lambda).
 
 ## Deploying
 
-The finder page is a static site and deploys anywhere — including Vercel — with
-no configuration. **Video rendering does not.**
+This deploys as **two pieces**: a static site on Vercel, and a render backend
+on a host that runs a real Node process.
+
+### Why it can't all go on Vercel
 
 `@remotion/renderer` drives a real headless Chromium to screenshot 720 frames
-and mux them with ffmpeg. That means:
+and mux them with ffmpeg:
 
-| Requirement | Vercel serverless |
+| What rendering needs | Vercel serverless |
 |---|---|
-| 193 MB headless Chromium, downloaded at runtime | 250 MB unzipped function limit |
-| Writes frames and the MP4 to disk | Filesystem is read-only except `/tmp` |
-| ~20s of CPU per render on a fast laptop | 60s cap, much slower CPU |
-| Long-running process (`server.listen`) | Functions are per-request handlers |
-| Renders persist to be downloaded | No storage between invocations |
+| 193 MB headless Chromium, fetched at runtime | 250 MB unzipped function limit |
+| Writes frames and the MP4 to disk | Read-only filesystem except `/tmp` |
+| ~20s of CPU per render on a fast laptop | 60s cap, slower CPU |
+| A long-running process (`server.listen`) | Per-request handlers |
+| Renders persist so they can be downloaded | No storage between invocations |
 
-So on Vercel you get the finder, and the video panel tells you the renderer
-isn't there. To actually render, you need one of:
+### 1. The static site (Vercel)
 
-- **A host that runs a Node process** — Render, Railway, Fly.io, or any VM.
-  `npm start` works as-is; point a persistent disk or object store at `out/`.
+`vercel.json` is already set up: it runs `scripts/build-static.mjs`, which copies
+the four browser files into `dist/` and skips `npm install` entirely. The browser
+half has no dependencies, so nothing from the 570 MB render toolchain is shipped
+or installed — the deploy is about 56 KB.
+
+Set one environment variable in the Vercel project:
+
+```
+RENDERER_URL = https://your-renderer.onrender.com
+```
+
+Leave it unset and the site still deploys fine — the video panel just explains
+that there's no renderer behind it.
+
+### 2. The render backend (Render / Railway / Fly.io)
+
+There's a `Dockerfile`. Deploy it, and set:
+
+```
+ALLOWED_ORIGINS = https://your-app.vercel.app
+GITHUB_TOKEN    = ghp_...            # optional, raises 60/hr to 5,000/hr
+```
+
+`ALLOWED_ORIGINS` is required for the Vercel page to call it — it's a
+comma-separated allow-list, deliberately not `*`, since this server spends your
+token's quota and CPU on renders.
+
+Give it a persistent disk mounted at `/app/out` if you want rendered videos to
+survive restarts; otherwise they're regenerated on demand.
+
+> The image pre-downloads the headless shell and installs `fonts-noto-color-emoji`
+> — a slim Linux image ships no emoji font, and without it every emoji in the
+> video renders as a blank box.
+
+### Alternatives
+
+- **One host, no split** — deploy the `Dockerfile` alone and use that URL for
+  everything. `npm start` already serves the page and the API together.
 - **[Remotion Lambda](https://www.remotion.dev/docs/lambda)** — renders on AWS
-  Lambda and writes to S3. This is the supported serverless path, and it also
-  gives the videos real public URLs, which is what "Copy link" wants.
-- **Static front end + separate render backend** — keep the Vercel URL and
-  point the page at a renderer hosted elsewhere.
+  Lambda into S3. More setup, but it gives videos real public URLs, which is
+  what "Copy link" wants.
 
 ## Other commands
 
@@ -115,6 +151,7 @@ isn't there. To actually render, you need one of:
 npm run studio         # Remotion Studio — live-edit the video with sample data
 npm run render:sample  # render out/sample.mp4 without touching the GitHub API
 npm run setup-browser  # pre-download the headless browser
+npm run build          # build dist/ for a static host
 ```
 
 ## Finder features

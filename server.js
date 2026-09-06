@@ -21,6 +21,17 @@ import { FPS, TOTAL_FRAMES } from "./lib/timeline.js";
 
 const PORT = Number(process.env.PORT ?? 8765);
 const TOKEN = process.env.GITHUB_TOKEN || undefined;
+/*
+ * Origins allowed to call this renderer cross-origin, comma separated, e.g.
+ * ALLOWED_ORIGINS=https://your-app.vercel.app
+ *
+ * Empty means same-origin only. Deliberately not "*": this server spends the
+ * GitHub token's quota and CPU on renders, so it shouldn't be open to anyone.
+ */
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
 const ROOT = resolve(".");
 const OUT_DIR = join(ROOT, "out");
 
@@ -41,12 +52,32 @@ const MIME = {
   ".ico": "image/x-icon",
 };
 
+/** Returns the CORS headers for this request's Origin, or nothing if not allowed. */
+function corsHeaders(req) {
+  const origin = req.headers.origin?.replace(/\/+$/, "");
+  if (!origin || !ALLOWED_ORIGINS.includes(origin)) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    // Without this the page can't read the quota headers cross-origin — only
+    // the CORS-safelisted response headers are visible to JS by default.
+    "Access-Control-Expose-Headers": "x-ratelimit-remaining, x-ratelimit-limit, x-ratelimit-reset",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+}
+
+/** Set per-request by the handler so json()/serveStatic() can echo them back. */
+let cors = {};
+
 const json = (res, status, body) => {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(payload),
     "Cache-Control": "no-store",
+    ...cors,
   });
   res.end(payload);
 };
@@ -156,7 +187,7 @@ async function handleGhProxy(res, path, search) {
   });
 
   const body = await upstream.text();
-  const forwarded = { "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" };
+  const forwarded = { "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8", ...cors };
   for (const h of ["x-ratelimit-remaining", "x-ratelimit-limit", "x-ratelimit-reset"]) {
     const v = upstream.headers.get(h);
     if (v) forwarded[h] = v;
@@ -284,6 +315,7 @@ function serveStatic(req, res, pathname) {
     // Videos are content-addressed by hash, so they're safe to cache hard.
     "Cache-Control": isVideo ? "public, max-age=31536000, immutable" : "no-store",
     ...(isVideo ? { "Accept-Ranges": "bytes" } : {}),
+    ...cors,
   });
   createReadStream(filePath).pipe(res);
 }
@@ -293,6 +325,12 @@ function serveStatic(req, res, pathname) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const { pathname } = url;
+
+  cors = corsHeaders(req);
+  if (req.method === "OPTIONS") {
+    res.writeHead(Object.keys(cors).length ? 204 : 403, cors);
+    return res.end();
+  }
 
   try {
     if (pathname.startsWith("/api/gh/") && req.method === "GET") {
@@ -320,4 +358,9 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`GitHub Profile Finder → http://localhost:${PORT}`);
   console.log(TOKEN ? "  GitHub token: set (5,000 req/hr)" : "  GitHub token: not set (60 req/hr)");
+  console.log(
+    ALLOWED_ORIGINS.length
+      ? `  Cross-origin callers: ${ALLOWED_ORIGINS.join(", ")}`
+      : "  Cross-origin callers: none (same-origin only)"
+  );
 });

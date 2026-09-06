@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node scripts/build-static.mjs",
+  "outputDirectory": "dist",
+  "installCommand": "echo 'no dependencies: the browser half of this app is plain JS'",
+  "framework": null,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    }
+  ]
+}

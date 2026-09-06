@@ -8,3 +8,6 @@ public/audio/
 
 # macOS
 .DS_Store
+
+# static build output
+dist/
