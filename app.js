@@ -54,6 +54,8 @@ const el = {
   videoShare: $("video-share"),
   videoCopy: $("video-copy"),
   videoHint: $("video-hint"),
+  videoSetup: $("video-setup"),
+  setupCopy: $("setup-copy"),
 };
 
 let currentRepos = [];
@@ -404,14 +406,19 @@ function showNoRenderer() {
   el.makeVideo.hidden = true;
   el.videoProgress.hidden = true;
   el.videoResult.hidden = true;
-  el.videoHint.textContent =
-    "Video rendering needs the Node server \u2014 this page is running as a static site, " +
-    "so there's nothing here to render with. Run it locally with `npm start`, or deploy " +
-    "somewhere that runs a Node process. See the README for why a serverless host can't do it.";
+  el.videoHint.textContent = "";
+  el.videoSetup.hidden = false;
 }
+
+const SETUP_COMMANDS = [
+  "git clone https://github.com/viratsehgal/github-profile-finder.git",
+  "cd github-profile-finder && npm install",
+  "npm start",
+].join("\n");
 
 function resetVideo() {
   el.makeVideo.hidden = !backend;
+  el.videoSetup.hidden = true;
   clearInterval(videoPoll);
   videoPoll = null;
   currentVideo = null;
@@ -574,6 +581,18 @@ el.clearRecent.addEventListener("click", () => {
 el.makeVideo.addEventListener("click", () => {
   const username = el.input.value.trim();
   if (username) makeVideo(username);
+});
+
+el.setupCopy.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(SETUP_COMMANDS);
+    el.setupCopy.textContent = "\u2713 Copied";
+    setTimeout(() => (el.setupCopy.textContent = "\ud83d\udccb Copy commands"), 2000);
+  } catch {
+    // Clipboard access can be refused (no gesture, insecure origin, embedded
+    // frame). The commands are already on screen, so just point at them.
+    el.videoHint.textContent = "Couldn't copy automatically \u2014 select the commands above instead.";
+  }
 });
 
 el.videoShare.addEventListener("click", shareVideo);

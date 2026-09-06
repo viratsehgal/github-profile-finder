@@ -101,6 +101,27 @@
           </div>
         </div>
 
+        <div id="video-setup" hidden>
+          <p class="setup-lead">
+            Rendering runs a real browser frame by frame, so it needs a machine of its own &mdash;
+            and this page is a static site with no renderer attached. Here&rsquo;s how to make yours:
+          </p>
+          <ol class="setup-steps">
+            <li><code>git clone https://github.com/viratsehgal/github-profile-finder.git</code></li>
+            <li><code>cd github-profile-finder &amp;&amp; npm install</code></li>
+            <li><code>npm start</code></li>
+          </ol>
+          <p class="note">
+            Then open <code>localhost:8765</code>, search your username and press
+            <strong>Make my video</strong>. The first run downloads a headless browser
+            (~190&nbsp;MB); after that each video takes about 20 seconds.
+          </p>
+          <div class="video-actions">
+            <button id="setup-copy" class="ghost-btn" type="button">&#128203; Copy commands</button>
+            <a class="ghost-btn" href="https://github.com/viratsehgal/github-profile-finder" target="_blank" rel="noopener noreferrer">&#128193; View on GitHub</a>
+          </div>
+        </div>
+
         <p id="video-hint" class="note"></p>
       </section>
 

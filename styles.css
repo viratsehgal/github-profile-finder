@@ -376,3 +376,33 @@ h1, h2 { margin: 0; letter-spacing: -.02em; }
   .primary.big { max-width: none; }
   #video-player, .video-actions { margin-inline: auto; }
 }
+
+/* ---------- "run it yourself" panel ---------- */
+#video-setup { margin-top: 4px; }
+.setup-lead { margin: 0 0 14px; color: var(--muted); font-size: 14px; max-width: 62ch; }
+.setup-steps {
+  margin: 0 0 14px;
+  padding-left: 22px;
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+}
+.setup-steps li { color: var(--faint); font-size: 13px; }
+.setup-steps code,
+#video-setup .note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  padding: 4px 8px;
+  display: inline-block;
+  word-break: break-all;
+}
+.setup-steps li code { display: block; }
+#video-setup .video-actions { max-width: 640px; }
+@media (max-width: 620px) {
+  .setup-steps { text-align: left; margin-inline: auto; max-width: 100%; }
+  .setup-lead { margin-inline: auto; }
+}
